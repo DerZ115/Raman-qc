@@ -11,5 +11,5 @@ import matplotlib.pyplot as plt
 spectrum = np.genfromtxt("spectra/E (1).TXT", delimiter=",")
 spectrum = np.transpose(spectrum)
 
-plt.plot(spectrum[0], spectrum[1])
-plt.show()
+fig, ax = plt.subplots()
+ax.plot()
