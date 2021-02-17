@@ -1,4 +1,5 @@
 spectra/
 .vscode/
+.ipynb_checkpoints/
 .Rhistory
 .Rproj.user
