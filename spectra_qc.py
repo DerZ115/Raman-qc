@@ -161,8 +161,8 @@ def peakFill_4S(y, pen, hwi, its, buckets):
 def peakRecognition(y, sg_window):
     corrected_sg2 = savgol_filter(y_corrected, window_length=sg_window, polyorder=3, deriv=2)
 
-    peaks = []
-    peaks_height = []
+    scores = []
+
     for i, row in enumerate(corrected_sg2):
         threshold = 0.05 + np.max(y[i])/30000
     #     print(i, threshold)
@@ -181,18 +181,18 @@ def peakRecognition(y, sg_window):
             peaks_tmp2.append(int(np.mean(peak_condensing)))
         
         heights = [y[i, k] for k in peaks_tmp2]
-        
-        peaks.append(peaks_tmp2)
-        peaks_height.append(heights)
+        score = np.median(heights) ** len(heights)
+        scores.append(score)
     
-    return peaks_height
+    return scores
     
 
 
 
-x, y, files = importDirectory('spectra/', 300, 1600)
 
-y_corrected = peakFill_4S(y, 0, 10, 6, 400)
 
-plt.plot(x[0], y_corrected[0])
-plt.show()
+if __name__ == '__main__':
+    x, y, files = importDirectory('spectra/', 300, 1600)
+    y_corrected = peakFill_4S(y, 0, 10, 6, 400)
+    scores = peakRecognition(y_corrected, 35)
+
