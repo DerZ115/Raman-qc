@@ -1,6 +1,7 @@
 import argparse
 import math
 import os
+import time
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -69,9 +70,9 @@ def importDirectory(path, limit_low=None, limit_high=None):
     y = []
 
     for file in files:
-        wns, ints = importFile(path + file, limit_low, limit_high)
-        x.append(wns)
-        y.append(ints)
+        x0, y0 = importFile(path + file, limit_low, limit_high)
+        x.append(x0)
+        y.append(y0)
     return np.array(x), np.array(y), files
 
 
@@ -222,9 +223,14 @@ def peakRecognition(y, sg_window):
 
 
 if __name__ == '__main__':
+    start_time = time.perf_counter()
     x, y, files = importDirectory('spectra2/', 300, 1600)
     y_corrected = peakFill_4S(y, 0, 10, 6, 400)
     scores = peakRecognition(y_corrected, 35)
 
     for score, file in sorted(zip(scores, files)):
         print(file)
+    
+    end_time = time.perf_counter()
+
+    print(f"Analyzed {len(files)} files in {end_time-start_time} seconds.")
