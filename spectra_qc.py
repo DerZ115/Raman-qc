@@ -2,10 +2,10 @@ import argparse
 import math
 import os
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 from scipy.linalg import solve_banded
-from scipy.signal import argrelmin, savgol_filter, waveforms
+from scipy.signal import argrelmin, savgol_filter
 
 
 def importFile(path, limit_low=None, limit_high=None):
@@ -75,8 +75,7 @@ def importDirectory(path, limit_low=None, limit_high=None):
     return np.array(x), np.array(y), files
 
 
-def _smooth(y, pen):
-
+def _prep_smoothing_matrix(pen):
     diag = np.zeros((5, 5))
     np.fill_diagonal(diag, 1)
     middle = np.matmul(np.diff(diag, n=2, axis=0).T,
@@ -90,22 +89,72 @@ def _smooth(y, pen):
         the_band = np.vstack((the_band, np.diag(to_band, -i)))
 
     indices = [0, 1] + [2] * (np.shape(y)[1]-4) + [3, 4]
-    dd = the_band[:, indices] * (10 ** pen)
-    dd[2, ] = dd[2, ] + 1
+    sparse_matrix = the_band[:, indices] * (10 ** pen)
+    sparse_matrix[2, ] = sparse_matrix[2, ] + 1
+    return sparse_matrix
+
+
+def _prep_buckets(buckets, len_x):
+    if isinstance(buckets, int):
+        lims = np.linspace(0, len_x-1, buckets+1, dtype=int)
+    else:
+        lims = buckets
+        buckets = len(lims)-1
+
+    mids = np.rint(np.convolve(lims, np.ones(2), 'valid') / 2).astype(int)
+    mids[0] = 0
+    mids[-1] = len_x - 1
+
+    return lims, mids
+
+
+def _prep_window(hwi, its):
+    if its != 1:
+        d1 = math.log10(hwi)
+        d2 = 0
+
+        tmp = np.array(range(its-1)) * (d2 - d1) / (its - 1) + d1
+        tmp = np.append(tmp, d2)
+        windows = np.ceil(10**tmp).astype(int)
+    else:
+        windows = np.array((hwi))
+    return windows
+
+
+def smooth_whittaker(y, dd):
+    """Smooth data with a Whittaker Smoother.
+
+    Args:
+        y (np.ndarray): The data to be smoothed, with each row representing one dataset (spectrum, etc).
+        dd (np.ndarray): Smoothing matrix for the whittaker algorithm.
+
+    Returns:
+        y_smooth (np.ndarray): The smoothed data.
+    """
 
     y_smooth = solve_banded((2, 2), dd, y.T).T
     return y_smooth
 
 
-def _subsample(y, lims, buckets):
+def subsample(y, lims):
+    """[summary]
 
+    Args:
+        y ([type]): [description]
+        lims ([type]): [description]
+        buckets ([type]): [description]
+
+    Returns:
+        [type]: [description]
+    """
+    buckets = len(lims) - 1
     y_subs = np.zeros(buckets)
     for i in range(buckets):
         y_subs[i] = np.min(y[lims[i]:lims[i+1]])
     return y_subs
 
 
-def _suppression(y_subs, buckets, its, windows):
+def suppression(y_subs, buckets, its, windows):
 
     for i in range(its):
         w0 = windows[i]
@@ -127,31 +176,15 @@ def peakFill_4S(y, pen, hwi, its, buckets):
     dims = np.shape(y)
     baseline = np.zeros(dims)
 
-    if its != 1:
-        d1 = math.log10(hwi)
-        d2 = 0
+    smooth_matrix = _prep_smoothing_matrix(pen)
+    lims, mids = _prep_buckets(buckets, dims[1])
+    windows = _prep_window(hwi, its)
 
-        tmp = np.array(range(its-1)) * (d2 - d1) / (its - 1) + d1
-        tmp = np.append(tmp, d2)
-        windows = np.ceil(10**tmp).astype(int)
-    else:
-        windows = np.array((hwi))
-
-    if isinstance(buckets, int):
-        lims = np.linspace(0, dims[1]-1, buckets+1, dtype=int)
-    else:
-        lims = buckets
-        buckets = len(lims)-1
-
-    mids = np.rint(np.convolve(lims, np.ones(2), 'valid') / 2).astype(int)
-    mids[0] = 0
-    mids[-1] = dims[1]-1
-
-    y_smooth = _smooth(y, pen)
+    y_smooth = smooth_whittaker(y, smooth_matrix)
 
     for s in range(len(y)):
-        y_subs = _subsample(y_smooth[s], lims, buckets)
-        y_supr = _suppression(y_subs, buckets, its, windows)
+        y_subs = subsample(y_smooth[s], lims)
+        y_supr = suppression(y_subs, buckets, its, windows)
         baseline[s] = np.interp(range(dims[1]), mids, y_supr)
 
     y_corrected = y - baseline
@@ -159,7 +192,8 @@ def peakFill_4S(y, pen, hwi, its, buckets):
 
 
 def peakRecognition(y, sg_window):
-    corrected_sg2 = savgol_filter(y_corrected, window_length=sg_window, polyorder=3, deriv=2)
+    corrected_sg2 = savgol_filter(
+        y_corrected, window_length=sg_window, polyorder=3, deriv=2)
 
     scores = []
 
@@ -168,7 +202,7 @@ def peakRecognition(y, sg_window):
     #     print(i, threshold)
         peaks_tmp = argrelmin(row)[0]
         peaks_tmp = [peak for peak in peaks_tmp if row[peak] < -threshold]
-        
+
         peak_condensing = []
         peaks_tmp2 = []
         for j in range(len(row)):
@@ -179,20 +213,18 @@ def peakRecognition(y, sg_window):
                 peak_condensing = []
         if len(peak_condensing) > 0:
             peaks_tmp2.append(int(np.mean(peak_condensing)))
-        
+
         heights = [y[i, k] for k in peaks_tmp2]
-        score = np.median(heights) ** len(heights)
+        score = np.median(heights) ** (len(heights)/10)
         scores.append(score)
-    
+
     return scores
-    
-
-
-
 
 
 if __name__ == '__main__':
-    x, y, files = importDirectory('spectra/', 300, 1600)
+    x, y, files = importDirectory('spectra2/', 300, 1600)
     y_corrected = peakFill_4S(y, 0, 10, 6, 400)
     scores = peakRecognition(y_corrected, 35)
 
+    for score, file in sorted(zip(scores, files)):
+        print(file)
