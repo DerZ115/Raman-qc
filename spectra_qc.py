@@ -6,7 +6,7 @@ import time
 
 import matplotlib.pyplot as plt
 import numpy as np
-from numpy.core.numeric import full
+import seaborn as sns
 from scipy.linalg import solve_banded
 from scipy.signal import argrelmin, savgol_filter
 
@@ -15,9 +15,9 @@ from scipy.signal import argrelmin, savgol_filter
 
 # parser.add_argument()
 
-path = "spectra2"
-limit_low = None
-limit_high = None
+path = "spectra3"
+limit_low = 300
+limit_high = 1600
 penalty = 1
 buckets = 400
 half_width = 10
@@ -349,10 +349,27 @@ if __name__ == '__main__':
     end_time = time.perf_counter()
 
     print(f"Analyzed {len(files)} files in {round(end_time-start_time, 2)} seconds.")
-    fig, (ax1, ax2) = plt.subplots(2)
-    ax1.set_title("Number of Peaks")
-    ax1.boxplot(peaks, vert=False)
 
-    ax2.set_title("Peak Heights")
-    ax2.boxplot(heights, vert=False)
+    sns.set(style="ticks")
+
+    fig, ((ax_box1, ax_box2),(ax_hist1, ax_hist2)) = plt.subplots(2, 2, sharex="col", gridspec_kw={"height_ratios": (.15, .85)})
+
+    sns.boxplot(x=peaks, ax=ax_box1)
+    sns.boxplot(x=heights, ax=ax_box2)
+    sns.histplot(peaks, ax=ax_hist1)
+    sns.histplot(heights, ax=ax_hist2)
+    
+    ax_box1.set(yticks=[])
+    ax_box2.set(yticks=[])
+    sns.despine(ax=ax_hist1)
+    sns.despine(ax=ax_hist2)
+    sns.despine(ax=ax_box1, left=True)
+    sns.despine(ax=ax_box2, left=True)
+
+    ax_hist1.set_xlabel("Number of Peaks")
+    ax_hist2.set_xlabel("Median Peak Height")
+
+    ax_box1.tick_params(axis="x", labelbottom=True)
+    ax_box2.tick_params(axis="x", labelbottom=True)
+
     plt.show()
