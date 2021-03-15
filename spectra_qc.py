@@ -1,12 +1,28 @@
 import argparse
 import math
 import os
+import shutil
 import time
 
 import matplotlib.pyplot as plt
 import numpy as np
+from numpy.core.numeric import full
 from scipy.linalg import solve_banded
 from scipy.signal import argrelmin, savgol_filter
+
+
+# parser = argparse.ArgumentParser()
+
+# parser.add_argument()
+
+path = "spectra2"
+limit_low = None
+limit_high = None
+penalty = 1
+buckets = 400
+half_width = 10
+iterations = 6
+sg_window = 35
 
 
 def importFile(path, limit_low=None, limit_high=None):
@@ -77,6 +93,14 @@ def importDirectory(path, limit_low=None, limit_high=None):
 
 
 def _prep_smoothing_matrix(pen):
+    """Generate the smoothing matrix for the Whittaker Smoother.
+
+    Args:
+        pen (int): Penalty to the second derivative used in the smoothing process. Higher --> Stronger Smoothing
+
+    Returns:
+        sparse_matrix (np.ndarray): Matrix used in the smoothing process. 
+    """
     diag = np.zeros((5, 5))
     np.fill_diagonal(diag, 1)
     middle = np.matmul(np.diff(diag, n=2, axis=0).T,
@@ -96,6 +120,16 @@ def _prep_smoothing_matrix(pen):
 
 
 def _prep_buckets(buckets, len_x):
+    """Calculate the position of the buckets for the subsampling step.
+
+    Args:
+        buckets (int or list/1D-array): Either the number of buckets, or a list of bucket positions.
+        len_x (int): Number of data points per spectrum.
+
+    Returns:
+        lims (np.ndarray): Array of the bucket boundaries.
+        mids (np.ndarray): Central position of every bucket.
+    """
     if isinstance(buckets, int):
         lims = np.linspace(0, len_x-1, buckets+1, dtype=int)
     else:
@@ -110,6 +144,15 @@ def _prep_buckets(buckets, len_x):
 
 
 def _prep_window(hwi, its):
+    """Calculate the suppression window half-width for each iteration.
+
+    Args:
+        hwi (int): Initial half-width of the suppression window.
+        its (int): Number of iterations for the main peak suppression loop.
+
+    Returns:
+        windows (np.ndarray): array of the exponentially decreasing window half-widths.
+    """
     if its != 1:
         d1 = math.log10(hwi)
         d2 = 0
@@ -138,15 +181,15 @@ def smooth_whittaker(y, dd):
 
 
 def subsample(y, lims):
-    """[summary]
+    """Split the data into equally sized buckets and return the minimum of each bucket. 
 
     Args:
-        y ([type]): [description]
-        lims ([type]): [description]
-        buckets ([type]): [description]
+        y (np.ndarray): The data to be subsampled.
+        lims (np.ndarray): The boundaries of the buckets.
+        buckets ([type]): The number of buckets.
 
     Returns:
-        [type]: [description]
+        y_subs (np.ndarray): The minimum value for each bucket. 
     """
     buckets = len(lims) - 1
     y_subs = np.zeros(buckets)
@@ -156,6 +199,17 @@ def subsample(y, lims):
 
 
 def suppression(y_subs, buckets, its, windows):
+    """Suppress peaks in the data, once each going forward and backward through the data. 
+
+    Args:
+        y_subs (np.ndarray): The subsampled data
+        buckets (int): The number of buckets used for subsampling
+        its (int): The number of iterations for peak suppression
+        windows (np.ndarray): The exponentially decreasing window widths for each iteration.
+
+    Returns:
+        y_subs (np.ndarray): The subsampled data with peaks suppressed
+    """
 
     for i in range(its):
         w0 = windows[i]
@@ -173,6 +227,18 @@ def suppression(y_subs, buckets, its, windows):
 
 
 def peakFill_4S(y, pen, hwi, its, buckets):
+    """[summary]
+
+    Args:
+        y ([type]): [description]
+        pen ([type]): [description]
+        hwi ([type]): [description]
+        its ([type]): [description]
+        buckets ([type]): [description]
+
+    Returns:
+        [type]: [description]
+    """
 
     dims = np.shape(y)
     baseline = np.zeros(dims)
@@ -193,10 +259,22 @@ def peakFill_4S(y, pen, hwi, its, buckets):
 
 
 def peakRecognition(y, sg_window):
+    """[summary]
+
+    Args:
+        y ([type]): [description]
+        sg_window ([type]): [description]
+
+    Returns:
+        [type]: [description]
+    """
+
     corrected_sg2 = savgol_filter(
-        y_corrected, window_length=sg_window, polyorder=3, deriv=2)
+        y, window_length=sg_window, polyorder=3, deriv=2)
 
     scores = []
+    med_heights_all = []
+    n_peaks_all = []
 
     for i, row in enumerate(corrected_sg2):
         threshold = 0.05 + np.max(y[i])/30000
@@ -216,21 +294,65 @@ def peakRecognition(y, sg_window):
             peaks_tmp2.append(int(np.mean(peak_condensing)))
 
         heights = [y[i, k] for k in peaks_tmp2]
-        score = np.median(heights) ** (len(heights)/10)
+        med_heights = np.median(heights)
+        n_peaks = len(heights)
+        score = med_heights ** (n_peaks/10)
         scores.append(score)
+        med_heights_all.append(med_heights)
+        n_peaks_all.append(n_peaks)
 
-    return scores
+    return scores, med_heights_all, n_peaks_all
+
+
+def export_sorted(path, files, scores, x, y_corr):
+    dest_raw = os.path.join(path, "sorted_spectra")
+    dest_corr = os.path.join(path, "baseline_corrected")
+
+    if not os.path.exists(dest_raw):
+        os.mkdir(dest_raw)
+    if not os.path.exists(dest_corr):
+        os.mkdir(dest_corr)
+
+    files_sorted = [item[1] for item in sorted(zip(scores, files))]
+    files_sorted.reverse()
+
+    for i in range(len(files_sorted)):
+        file = files_sorted[i]
+        src_file = os.path.join(path, file)
+        dest_raw_file = os.path.join(dest_raw, file)
+        new_file = str(i+1) + "_" + file
+        new_file_raw = os.path.join(dest_raw, new_file)
+        i_orig = files.index(file)
+
+        if os.path.exists(new_file_raw):
+            if os.path.samefile(src_file, new_file_raw):
+                continue
+            os.remove(new_file_raw)
+
+        shutil.copy(src_file, dest_raw)
+        os.rename(dest_raw_file, new_file_raw)
+
+        dest_corr_file = os.path.join(dest_corr, new_file)
+        with open(dest_corr_file, "w+") as f:
+            for j in range(len(x[i_orig])):
+                f.write(str(x[i_orig, j]) + "," + str(y_corr[i_orig, j]))
 
 
 if __name__ == '__main__':
     start_time = time.perf_counter()
-    x, y, files = importDirectory('spectra2/', 300, 1600)
-    y_corrected = peakFill_4S(y, 0, 10, 6, 400)
-    scores = peakRecognition(y_corrected, 35)
+    x, y, files = importDirectory(path, limit_low, limit_high)
+    y_corrected = peakFill_4S(y, penalty, half_width, iterations, buckets)
+    scores, heights, peaks = peakRecognition(y_corrected, sg_window)
 
-    for score, file in sorted(zip(scores, files)):
-        print(file)
-    
+    export_sorted(path, files, scores, x, y_corrected)
+
     end_time = time.perf_counter()
 
-    print(f"Analyzed {len(files)} files in {end_time-start_time} seconds.")
+    print(f"Analyzed {len(files)} files in {round(end_time-start_time, 2)} seconds.")
+    fig, (ax1, ax2) = plt.subplots(2)
+    ax1.set_title("Number of Peaks")
+    ax1.boxplot(peaks, vert=False)
+
+    ax2.set_title("Peak Heights")
+    ax2.boxplot(heights, vert=False)
+    plt.show()
