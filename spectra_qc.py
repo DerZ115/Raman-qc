@@ -3,6 +3,7 @@ import math
 import os
 import shutil
 import time
+import progressbar
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -57,6 +58,9 @@ def importFile(path, limit_low=None, limit_high=None):
 
     x = x[limit_low_index:limit_high_index]
     y = y[limit_low_index:limit_high_index]
+
+    bar1.update(bar1.value + 1)
+
     return x, y
 
 
@@ -195,6 +199,7 @@ def subsample(y, lims):
     y_subs = np.zeros(buckets)
     for i in range(buckets):
         y_subs[i] = np.min(y[lims[i]:lims[i+1]])
+
     return y_subs
 
 
@@ -223,6 +228,7 @@ def suppression(y_subs, buckets, its, windows):
             v = min(j, w0, buckets-j)
             a = np.mean(y_subs[j-v:j+v+1])
             y_subs[j] = min(a, y_subs[j])
+
     return y_subs
 
 
@@ -253,6 +259,7 @@ def peakFill_4S(y, pen, hwi, its, buckets):
         y_subs = subsample(y_smooth[s], lims)
         y_supr = suppression(y_subs, buckets, its, windows)
         baseline[s] = np.interp(range(dims[1]), mids, y_supr)
+        bar2.update(bar2.value + 1)
 
     y_corrected = y - baseline
     return y_corrected
@@ -301,6 +308,8 @@ def peakRecognition(y, sg_window):
         med_heights_all.append(med_heights)
         n_peaks_all.append(n_peaks)
 
+        bar3.update(bar3.value + 1)
+
     return scores, med_heights_all, n_peaks_all
 
 
@@ -336,15 +345,43 @@ def export_sorted(path, files, scores, x, y_corr):
         with open(dest_corr_file, "w+") as f:
             for j in range(len(x[i_orig])):
                 f.write(str(x[i_orig, j]) + "," + str(y_corr[i_orig, j]))
+        
+        bar4.update(bar4.value + 1)
 
 
 if __name__ == '__main__':
     start_time = time.perf_counter()
+
+    n_files = len([file for file in os.listdir(path) if file.lower().endswith(".txt")])
+
+    bar1 = progressbar.ProgressBar(
+        prefix='Importing Files...',
+        max_value=n_files)
+
     x, y, files = importDirectory(path, limit_low, limit_high)
+
+    bar1.finish()
+    bar2 = progressbar.ProgressBar(
+        prefix='Filling Peaks.....',
+        max_value=n_files)
+
     y_corrected = peakFill_4S(y, penalty, half_width, iterations, buckets)
+
+    bar2.finish()
+    bar3 = progressbar.ProgressBar(
+        prefix='Detecting Peaks...',
+        max_value=n_files)
+
     scores, heights, peaks = peakRecognition(y_corrected, sg_window)
 
+    bar3.finish()
+    bar4 = progressbar.ProgressBar(
+        prefix='Exporting Data....',
+        max_value=n_files)
+
     export_sorted(path, files, scores, x, y_corrected)
+
+    bar4.finish()
 
     end_time = time.perf_counter()
 
