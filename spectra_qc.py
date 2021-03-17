@@ -355,28 +355,28 @@ if __name__ == '__main__':
     n_files = len([file for file in os.listdir(path) if file.lower().endswith(".txt")])
 
     bar1 = progressbar.ProgressBar(
-        prefix='Importing Files...',
+        prefix='Importing Files.......',
         max_value=n_files)
 
     x, y, files = importDirectory(path, limit_low, limit_high)
 
     bar1.finish()
     bar2 = progressbar.ProgressBar(
-        prefix='Filling Peaks.....',
+        prefix='Estimating Baseline...',
         max_value=n_files)
 
     y_corrected = peakFill_4S(y, penalty, half_width, iterations, buckets)
 
     bar2.finish()
     bar3 = progressbar.ProgressBar(
-        prefix='Detecting Peaks...',
+        prefix='Detecting Peaks.......',
         max_value=n_files)
 
     scores, heights, peaks = peakRecognition(y_corrected, sg_window)
 
     bar3.finish()
     bar4 = progressbar.ProgressBar(
-        prefix='Exporting Data....',
+        prefix='Exporting Data........',
         max_value=n_files)
 
     export_sorted(path, files, scores, x, y_corrected)
