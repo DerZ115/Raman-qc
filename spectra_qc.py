@@ -13,7 +13,6 @@ from scipy.signal import argrelmin, savgol_filter
 from scipy.integrate import simpson
 
 
-
 def importFile(path, limit_low=None, limit_high=None):
     """Import the spectral data from a single file
 
@@ -305,7 +304,7 @@ def calc_scores(x, y, peaks, score_measure, n_peaks_influence):
 
     Returns:
         [type]: [description]
-    """    
+    """
 
     scores = []
     n_peaks_all = []
@@ -350,7 +349,7 @@ def export_sorted(path, files, scores, x, y_corr):
         scores ([type]): [description]
         x ([type]): [description]
         y_corr ([type]): [description]
-    """    
+    """
 
     dest_raw = os.path.join(path, "sorted_spectra")
     dest_corr = os.path.join(path, "baseline_corrected")
@@ -385,23 +384,32 @@ def export_sorted(path, files, scores, x, y_corr):
                 f.write(str(x[i_orig, j]) + "," + str(y_corr[i_orig, j]))
 
         bar5.update(bar5.value + 1)
-    
+
     return files_sorted
 
 
 if __name__ == '__main__':
 
-    parser = argparse.ArgumentParser(description="Sort spectra by quality score using 4S baseline correction and Savitzky Golay based peak detection")
+    parser = argparse.ArgumentParser(
+        description="Sort spectra by quality score using 4S baseline correction and Savitzky Golay based peak detection")
 
     parser.add_argument("DIR", help="directory containing the spectra")
-    parser.add_argument("-l", "--limits", metavar=("LOW", "HIGH"), type=float, nargs=2, default=[None, None], help="Set limits to reduce the range of x-values")
-    parser.add_argument("-p", "--penalty", type=int, default=0, help="Penalty to the 2nd derivative used for smoothing; higher -> stronger smoothing")
-    parser.add_argument("-b", "--buckets", type=int, default=400, help="Number of buckets used for subsampling")
-    parser.add_argument("-w", "--halfwidth", type=int, default = 10, help="Initial half width for the peak suppression algorithm, in number of buckets")
-    parser.add_argument("-i", "--iterations", type=int, default=6, help="Number of iterations for the peak suppression algorithm")
-    parser.add_argument("-W", "--sgwindow", type=int, default=35, help="Window width used for smoothing before detecting peaks.")
-    parser.add_argument("-s", "--score", type=int, choices={0,1,2,3,4}, default=1, help="Measure to use for scoring spectra; 0: None, use 1 as the base score; 1: Median peak height; 2: Mean peak height; 3: Mean peak area; 4: Total peak area")
-    parser.add_argument("-n", "--npeaks", type=int, choices={0,1,2}, default=1, help="How the number of peaks influences the score; 0: No influence; 1: Multiplicative, 2: Exponential")
+    parser.add_argument("-l", "--limits", metavar=("LOW", "HIGH"), type=float, nargs=2, default=[None, None],
+                        help="Set limits to reduce the range of x-values")
+    parser.add_argument("-p", "--penalty", type=int, default=0,
+                        help="Penalty to the 2nd derivative used for smoothing; higher -> stronger smoothing")
+    parser.add_argument("-b", "--buckets", type=int, default=400,
+                        help="Number of buckets used for subsampling")
+    parser.add_argument("-w", "--halfwidth", type=int, default=10,
+                        help="Initial half width for the peak suppression algorithm, in number of buckets")
+    parser.add_argument("-i", "--iterations", type=int, default=6,
+                        help="Number of iterations for the peak suppression algorithm")
+    parser.add_argument("-W", "--sgwindow", type=int, default=35,
+                        help="Window width used for smoothing before detecting peaks.")
+    parser.add_argument("-s", "--score", type=int, choices={0, 1, 2, 3, 4}, default=1,
+                        help="Measure to use for scoring spectra; 0: None, use 1 as the base score; 1: Median peak height; 2: Mean peak height; 3: Mean peak area; 4: Total peak area")
+    parser.add_argument("-n", "--npeaks", type=int, choices={0, 1, 2}, default=1,
+                        help="How the number of peaks influences the score; 0: No influence; 1: Multiplicative, 2: Exponential")
 
     args = parser.parse_args()
 
@@ -421,7 +429,8 @@ if __name__ == '__main__':
         prefix='Estimating Baseline...',
         max_value=n_files)
 
-    y_corrected = peakFill_4S(y, args.penalty, args.halfwidth, args.iterations, args.buckets)
+    y_corrected = peakFill_4S(
+        y, args.penalty, args.halfwidth, args.iterations, args.buckets)
 
     bar2.finish()
     bar3 = progressbar.ProgressBar(
@@ -447,8 +456,7 @@ if __name__ == '__main__':
 
     bar5.finish()
 
-
-    row_format ="{:<25} {:<25}"
+    row_format = "{:<25} {:<25}"
     print("="*50)
     print(row_format.format("File", "Score"))
     print("_"*50)
