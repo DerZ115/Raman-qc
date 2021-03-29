@@ -2,6 +2,7 @@ import argparse
 import math
 import os
 import shutil
+import sys
 import time
 import progressbar
 
@@ -11,6 +12,54 @@ import seaborn as sns
 from scipy.linalg import solve_banded
 from scipy.signal import argrelmin, savgol_filter
 from scipy.integrate import simpson
+
+
+def parse_arguments():
+
+    parser = argparse.ArgumentParser(
+        description="Sort spectra by quality score using 4S baseline correction and Savitzky Golay based peak detection")
+
+    parser.add_argument("DIR", help="Directory containing the spectra")
+    parser.add_argument("-l", "--limits", metavar=("LOW", "HIGH"), type=float, nargs=2, default=[None, None],
+                        help="Set limits to reduce the range of x-values")
+    parser.add_argument("-p", "--penalty", type=int, default=0,
+                        help="Penalty to the 2nd derivative used for smoothing; higher -> stronger smoothing")
+    parser.add_argument("-b", "--buckets", type=int, default=400,
+                        help="Number of buckets used for subsampling")
+    parser.add_argument("-w", "--halfwidth", type=int, default=10,
+                        help="Initial half width for the peak suppression algorithm, in number of buckets")
+    parser.add_argument("-i", "--iterations", type=int, default=6,
+                        help="Number of iterations for the peak suppression algorithm")
+    parser.add_argument("-W", "--sgwindow", type=int, default=35,
+                        help="Window width used for smoothing before detecting peaks.")
+    parser.add_argument("-s", "--score", type=int, choices={0, 1, 2, 3, 4}, default=1,
+                        help="Measure to use for scoring spectra; 0: None, use 1 as the base score; 1: Median peak height; 2: Mean peak height; 3: Mean peak area; 4: Total peak area")
+    parser.add_argument("-n", "--npeaks", type=int, choices={0, 1, 2}, default=1,
+                        help="How the number of peaks influences the score; 0: No influence; 1: Multiplicative, 2: Exponential")
+
+    args = parser.parse_args()
+    return args
+
+
+def check_args_validity(args):
+    if args.score == 0 and args.npeaks == 0:
+        print("Error: Peak intensity and peak number cannot both be ignored")
+        sys.exit()
+    if args.sgwindow % 2 == 0:
+        print("Error: Savitzky Golay window size must be odd")
+        sys.exit()
+    if args.penalty < 0:
+        print("Error: Smoothing penalty must be positive or zero")
+        sys.exit()
+    if args.buckets <= 0:
+        print("Error: Number of buckets must be positive")
+        sys.exit()
+    if args.halfwidth <= 0:
+        print("Error: Suppression half width must be positive")
+        sys.exit()
+    if args.iterations <= 0:
+        print("Error: Number of iterations must be positive")
+        sys.exit()
 
 
 def importFile(path, limit_low=None, limit_high=None):
@@ -32,13 +81,21 @@ def importFile(path, limit_low=None, limit_high=None):
     y = spectrum[1]
 
     if limit_low is not None:
-        limit_low_index = list(x).index(limit_low)
+        try:
+            limit_low_index = list(x).index(limit_low)
+        except ValueError:
+            print("Error: Lower limit out of range")
+            sys.exit()
     else:
         limit_low_index = 0
         limit_low = x[0]
 
     if limit_high is not None:
-        limit_high_index = list(x).index(limit_high)
+        try:
+            limit_high_index = list(x).index(limit_high)
+        except ValueError:
+            print("Error: Upper limit out of range")
+            sys.exit()
     else:
         limit_high_index = len(x)
         limit_high = x[-1]
@@ -81,33 +138,6 @@ def importDirectory(path, limit_low=None, limit_high=None):
         x.append(x0)
         y.append(y0)
     return np.array(x), np.array(y), files
-
-
-def _prep_smoothing_matrix(pen):
-    """Generate the smoothing matrix for the Whittaker Smoother.
-
-    Args:
-        pen (int): Penalty to the second derivative used in the smoothing process. Higher --> Stronger Smoothing
-
-    Returns:
-        sparse_matrix (np.ndarray): Matrix used in the smoothing process. 
-    """
-    diag = np.zeros((5, 5))
-    np.fill_diagonal(diag, 1)
-    middle = np.matmul(np.diff(diag, n=2, axis=0).T,
-                       np.diff(diag, n=2, axis=0))
-    zeros = np.zeros((2, 5))
-
-    to_band = np.vstack((zeros, middle, zeros))
-    the_band = np.diag(to_band)
-
-    for i in range(1, 5):
-        the_band = np.vstack((the_band, np.diag(to_band, -i)))
-
-    indices = [0, 1] + [2] * (np.shape(y)[1]-4) + [3, 4]
-    sparse_matrix = the_band[:, indices] * (10 ** pen)
-    sparse_matrix[2, ] = sparse_matrix[2, ] + 1
-    return sparse_matrix
 
 
 def _prep_buckets(buckets, len_x):
@@ -156,7 +186,7 @@ def _prep_window(hwi, its):
     return windows
 
 
-def smooth_whittaker(y, dd):
+def smooth_whittaker(y, pen):
     """Smooth data with a Whittaker Smoother.
 
     Args:
@@ -166,8 +196,23 @@ def smooth_whittaker(y, dd):
     Returns:
         y_smooth (np.ndarray): The smoothed data.
     """
+    diag = np.zeros((5, 5))
+    np.fill_diagonal(diag, 1)
+    middle = np.matmul(np.diff(diag, n=2, axis=0).T,
+                       np.diff(diag, n=2, axis=0))
+    zeros = np.zeros((2, 5))
 
-    y_smooth = solve_banded((2, 2), dd, y.T).T
+    to_band = np.vstack((zeros, middle, zeros))
+    the_band = np.diag(to_band)
+
+    for i in range(1, 5):
+        the_band = np.vstack((the_band, np.diag(to_band, -i)))
+
+    indices = [0, 1] + [2] * (np.shape(y)[1]-4) + [3, 4]
+    sparse_matrix = the_band[:, indices] * (10 ** pen)
+    sparse_matrix[2, ] = sparse_matrix[2, ] + 1
+
+    y_smooth = solve_banded((2, 2), sparse_matrix, y.T).T
     return y_smooth
 
 
@@ -237,11 +282,10 @@ def peakFill_4S(y, pen, hwi, its, buckets):
     dims = np.shape(y)
     baseline = np.zeros(dims)
 
-    smooth_matrix = _prep_smoothing_matrix(pen)
     lims, mids = _prep_buckets(buckets, dims[1])
     windows = _prep_window(hwi, its)
 
-    y_smooth = smooth_whittaker(y, smooth_matrix)
+    y_smooth = smooth_whittaker(y, pen)
 
     for s in range(len(y)):
         y_subs = subsample(y_smooth[s], lims)
@@ -271,7 +315,6 @@ def peakRecognition(x, y, sg_window):
 
     for i, row in enumerate(corrected_sg2):
         threshold = 0.05 + np.max(y[i])/30000
-    #     print(i, threshold)
         peaks = argrelmin(row)[0]
         peaks = [peak for peak in peaks if row[peak] < -threshold]
 
@@ -390,28 +433,7 @@ def export_sorted(path, files, scores, x, y_corr):
 
 if __name__ == '__main__':
 
-    parser = argparse.ArgumentParser(
-        description="Sort spectra by quality score using 4S baseline correction and Savitzky Golay based peak detection")
-
-    parser.add_argument("DIR", help="directory containing the spectra")
-    parser.add_argument("-l", "--limits", metavar=("LOW", "HIGH"), type=float, nargs=2, default=[None, None],
-                        help="Set limits to reduce the range of x-values")
-    parser.add_argument("-p", "--penalty", type=int, default=0,
-                        help="Penalty to the 2nd derivative used for smoothing; higher -> stronger smoothing")
-    parser.add_argument("-b", "--buckets", type=int, default=400,
-                        help="Number of buckets used for subsampling")
-    parser.add_argument("-w", "--halfwidth", type=int, default=10,
-                        help="Initial half width for the peak suppression algorithm, in number of buckets")
-    parser.add_argument("-i", "--iterations", type=int, default=6,
-                        help="Number of iterations for the peak suppression algorithm")
-    parser.add_argument("-W", "--sgwindow", type=int, default=35,
-                        help="Window width used for smoothing before detecting peaks.")
-    parser.add_argument("-s", "--score", type=int, choices={0, 1, 2, 3, 4}, default=1,
-                        help="Measure to use for scoring spectra; 0: None, use 1 as the base score; 1: Median peak height; 2: Mean peak height; 3: Mean peak area; 4: Total peak area")
-    parser.add_argument("-n", "--npeaks", type=int, choices={0, 1, 2}, default=1,
-                        help="How the number of peaks influences the score; 0: No influence; 1: Multiplicative, 2: Exponential")
-
-    args = parser.parse_args()
+    args = parse_arguments()
 
     start_time = time.perf_counter()
 
