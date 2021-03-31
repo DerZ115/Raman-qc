@@ -354,7 +354,9 @@ def calc_scores(x, y, peaks, score_measure, n_peaks_influence):
 
     for i, row in enumerate(peaks):
         n_peaks = len(row)
-        if score_measure == 0:
+        if n_peaks == 0:
+            score = 0
+        elif score_measure == 0:
             score = 1
         elif score_measure == 1:  # median height
             heights = [y[i, k] for k in row]
@@ -370,7 +372,9 @@ def calc_scores(x, y, peaks, score_measure, n_peaks_influence):
         scores.append(score)
         n_peaks_all.append(n_peaks)
 
-        if n_peaks_influence == 0:
+        if n_peaks == 0:
+            scores_peaks = 0
+        elif n_peaks_influence == 0:
             scores_peaks = scores
         elif n_peaks_influence == 1:
             scores_peaks = [n*score for n, score in zip(n_peaks_all, scores)]
@@ -379,6 +383,9 @@ def calc_scores(x, y, peaks, score_measure, n_peaks_influence):
                             for n, score in zip(n_peaks_all, scores)]
 
         bar4.update(bar4.value + 1)
+
+    n_peaks_all = [n_peaks for scores_peaks, n_peaks in sorted(zip(scores_peaks, n_peaks_all))]
+    n_peaks_all.reverse()
 
     return scores_peaks, scores, n_peaks_all
 
@@ -478,46 +485,46 @@ if __name__ == '__main__':
 
     bar5.finish()
 
-    row_format = "{:<25} {:<25}"
-    print("="*50)
-    print(row_format.format("File", "Score"))
-    print("_"*50)
-    for score, file in files_sorted:
-        print(row_format.format(file, int(score)))
-    print("="*50)
+    row_format = "{:<25} {:<25} {:<25} {:<25}"
+    print("="*100)
+    print(row_format.format("", "File", "Score", "N Peaks"))
+    print("_"*100)
+    for i in range(len(files_sorted)):
+        print(row_format.format(i, files_sorted[i][1], int(files_sorted[i][0]), n_peaks[i]))
+    print("="*100)
 
     end_time = time.perf_counter()
 
     print(
         f"Analyzed {len(files)} files in {round(end_time-start_time, 2)} seconds.")
 
-    sns.set(style="ticks")
+    # sns.set(style="ticks")
 
-    fig, ((ax_box1, ax_box2), (ax_hist1, ax_hist2)) = plt.subplots(
-        2, 2, sharex="col", gridspec_kw={"height_ratios": (.15, .85)})
+    # fig, ((ax_box1, ax_box2), (ax_hist1, ax_hist2)) = plt.subplots(
+    #     2, 2, sharex="col", gridspec_kw={"height_ratios": (.15, .85)})
 
-    sns.boxplot(x=n_peaks, ax=ax_box1)
-    sns.boxplot(x=scores, ax=ax_box2)
-    sns.histplot(n_peaks, ax=ax_hist1)
-    sns.histplot(scores, ax=ax_hist2)
+    # sns.boxplot(x=n_peaks, ax=ax_box1)
+    # sns.boxplot(x=scores, ax=ax_box2)
+    # sns.histplot(n_peaks, ax=ax_hist1)
+    # sns.histplot(scores, ax=ax_hist2)
 
-    ax_box1.set(yticks=[])
-    ax_box2.set(yticks=[])
-    sns.despine(ax=ax_hist1)
-    sns.despine(ax=ax_hist2)
-    sns.despine(ax=ax_box1, left=True)
-    sns.despine(ax=ax_box2, left=True)
+    # ax_box1.set(yticks=[])
+    # ax_box2.set(yticks=[])
+    # sns.despine(ax=ax_hist1)
+    # sns.despine(ax=ax_hist2)
+    # sns.despine(ax=ax_box1, left=True)
+    # sns.despine(ax=ax_box2, left=True)
 
-    score_names = {0: "No Score",
-                   1: "Median Height",
-                   2: "Mean Height",
-                   3: "Mean Area",
-                   4: "Total Area"}
+    # score_names = {0: "No Score",
+    #                1: "Median Height",
+    #                2: "Mean Height",
+    #                3: "Mean Area",
+    #                4: "Total Area"}
 
-    ax_hist1.set_xlabel("Number of Peaks")
-    ax_hist2.set_xlabel(score_names[args.score])
+    # ax_hist1.set_xlabel("Number of Peaks")
+    # ax_hist2.set_xlabel(score_names[args.score])
 
-    ax_box1.tick_params(axis="x", labelbottom=True)
-    ax_box2.tick_params(axis="x", labelbottom=True)
+    # ax_box1.tick_params(axis="x", labelbottom=True)
+    # ax_box2.tick_params(axis="x", labelbottom=True)
 
-    plt.show()
+    # plt.show()
