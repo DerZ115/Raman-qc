@@ -128,7 +128,7 @@ def importDirectory(path, limit_low=None, limit_high=None):
     files = os.listdir(path)
     files = [file for file in files if file.lower().endswith(".txt")]
 
-    files = sorted(files, key=lambda s: int(s[s.find("(")+1:s.find(")")]))
+    # files = sorted(files, key=lambda s: int(s[s.find("(")+1:s.find(")")]))
 
     x = []
     y = []
@@ -313,8 +313,9 @@ def peakRecognition(x, y, sg_window):
 
     peaks_all = []
 
-    for i, row in enumerate(corrected_sg2):
-        threshold = 0.05 + np.max(y[i])/30000
+    for row in corrected_sg2:
+        threshold = 0.5
+        #0.05 + np.max(y[i])/30000
         peaks = argrelmin(row)[0]
         peaks = [peak for peak in peaks if row[peak] < -threshold]
 
@@ -379,7 +380,7 @@ def calc_scores(x, y, peaks, score_measure, n_peaks_influence):
         elif n_peaks_influence == 1:
             scores_peaks = [n*score for n, score in zip(n_peaks_all, scores)]
         elif n_peaks_influence == 2:
-            scores_peaks = [score**(n/np.mean(n_peaks_all))
+            scores_peaks = [score**(n/50)
                             for n, score in zip(n_peaks_all, scores)]
 
         bar4.update(bar4.value + 1)
@@ -495,36 +496,42 @@ if __name__ == '__main__':
 
     end_time = time.perf_counter()
 
-    print(
-        f"Analyzed {len(files)} files in {round(end_time-start_time, 2)} seconds.")
+    print(f"Analyzed {len(files)} files in {round(end_time-start_time, 2)} seconds.")
+    
+    print(f"Mean Score: {int(np.mean(scores_peaks))}")
 
-    # sns.set(style="ticks")
+    sns.set(style="ticks")
 
-    # fig, ((ax_box1, ax_box2), (ax_hist1, ax_hist2)) = plt.subplots(
-    #     2, 2, sharex="col", gridspec_kw={"height_ratios": (.15, .85)})
+    fig, ((ax_box1, ax_box2), (ax_hist1, ax_hist2)) = plt.subplots(
+        2, 2, sharex="col", gridspec_kw={"height_ratios": (.15, .85)},
+        figsize=(10,5.7))
 
-    # sns.boxplot(x=n_peaks, ax=ax_box1)
-    # sns.boxplot(x=scores, ax=ax_box2)
-    # sns.histplot(n_peaks, ax=ax_hist1)
-    # sns.histplot(scores, ax=ax_hist2)
+    sns.boxplot(x=n_peaks, ax=ax_box1)
+    sns.boxplot(x=scores, ax=ax_box2)
+    sns.histplot(n_peaks, ax=ax_hist1, binrange=(30, 66), binwidth=3)
+    sns.histplot(scores, ax=ax_hist2, binrange=(0,7000), binwidth=500)
 
-    # ax_box1.set(yticks=[])
-    # ax_box2.set(yticks=[])
-    # sns.despine(ax=ax_hist1)
-    # sns.despine(ax=ax_hist2)
-    # sns.despine(ax=ax_box1, left=True)
-    # sns.despine(ax=ax_box2, left=True)
+    ax_box1.set(yticks=[])
+    ax_box2.set(yticks=[])
+    sns.despine(ax=ax_hist1)
+    sns.despine(ax=ax_hist2)
+    sns.despine(ax=ax_box1, left=True)
+    sns.despine(ax=ax_box2, left=True)
 
-    # score_names = {0: "No Score",
-    #                1: "Median Height",
-    #                2: "Mean Height",
-    #                3: "Mean Area",
-    #                4: "Total Area"}
+    score_names = {0: "No Score",
+                   1: "Median Height",
+                   2: "Mean Height",
+                   3: "Mean Area",
+                   4: "Total Area"}
 
-    # ax_hist1.set_xlabel("Number of Peaks")
-    # ax_hist2.set_xlabel(score_names[args.score])
+    ax_hist1.set_xlabel("Number of Peaks")
+    ax_hist2.set_xlabel(score_names[args.score])
 
-    # ax_box1.tick_params(axis="x", labelbottom=True)
-    # ax_box2.tick_params(axis="x", labelbottom=True)
+    ax_hist1.set_ylim([None, 25])
+    ax_hist2.set_ylim([None, 25])
 
-    # plt.show()
+    ax_box1.tick_params(axis="x", labelbottom=True)
+    ax_box2.tick_params(axis="x", labelbottom=True)
+
+    plt.tight_layout()
+    plt.show()
