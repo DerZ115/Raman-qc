@@ -24,11 +24,11 @@ def parse_arguments():
                         help="Set limits to reduce the range of x-values")
     parser.add_argument("-p", "--penalty", type=int, default=0,
                         help="Penalty to the 2nd derivative used for smoothing; higher -> stronger smoothing")
-    parser.add_argument("-b", "--buckets", type=int, default=400,
+    parser.add_argument("-b", "--buckets", type=int, default=500,
                         help="Number of buckets used for subsampling")
     parser.add_argument("-w", "--halfwidth", type=int, default=10,
                         help="Initial half width for the peak suppression algorithm, in number of buckets")
-    parser.add_argument("-i", "--iterations", type=int, default=6,
+    parser.add_argument("-i", "--iterations", type=int, default=5,
                         help="Number of iterations for the peak suppression algorithm")
     parser.add_argument("-W", "--sgwindow", type=int, default=35,
                         help="Window width used for smoothing before detecting peaks.")
