@@ -20,46 +20,39 @@ def parse_arguments():
         description="Sort spectra by quality score using 4S baseline correction and Savitzky Golay based peak detection")
 
     parser.add_argument("DIR", help="Directory containing the spectra")
+    parser.add_argument("-f", "--filetype", metavar="SUFFIX", type=str, default="txt",
+                        help="Format suffix of the spectra files. Default: 'txt'")
     parser.add_argument("-l", "--limits", metavar=("LOW", "HIGH"), type=float, nargs=2, default=[None, None],
-                        help="Set limits to reduce the range of x-values")
+                        help="Set limits to reduce the range of x-values. Default: None")
     parser.add_argument("-p", "--penalty", type=int, default=0,
-                        help="Penalty to the 2nd derivative used for smoothing; higher -> stronger smoothing")
+                        help="Penalty to the 2nd derivative used for smoothing; higher -> stronger smoothing. Default: 0")
     parser.add_argument("-b", "--buckets", type=int, default=500,
-                        help="Number of buckets used for subsampling")
+                        help="Number of buckets used for subsampling. Default: 500")
     parser.add_argument("-w", "--halfwidth", type=int, default=10,
-                        help="Initial half width for the peak suppression algorithm, in number of buckets")
+                        help="Initial half width for the peak suppression algorithm, in number of buckets. Default: 10")
     parser.add_argument("-i", "--iterations", type=int, default=5,
-                        help="Number of iterations for the peak suppression algorithm")
+                        help="Number of iterations for the peak suppression algorithm. Default: 5")
     parser.add_argument("-W", "--sgwindow", type=int, default=35,
-                        help="Window width used for smoothing before detecting peaks.")
+                        help="Window width used for smoothing before detecting peaks. Default: 35")
+    parser.add_argument("-t", "--threshold", type=float, default=0.5,
+                        help="Threshold for the (negative) 2nd derivative for a peak to be accepted. Default: 0.5")
     parser.add_argument("-s", "--score", type=int, choices={0, 1, 2, 3, 4}, default=1,
-                        help="Measure to use for scoring spectra; 0: None, use 1 as the base score; 1: Median peak height; 2: Mean peak height; 3: Mean peak area; 4: Total peak area")
+                        help="Measure to use for scoring spectra; 0: None, use 1 as the base score; 1: Median peak height; 2: Mean peak height; 3: Mean peak area; 4: Total peak area. Default: 1")
     parser.add_argument("-n", "--npeaks", type=int, choices={0, 1, 2}, default=1,
-                        help="How the number of peaks influences the score; 0: No influence; 1: Multiplicative, 2: Exponential")
+                        help="How the number of peaks influences the score; 0: No influence; 1: Multiplicative, 2: Exponential. Default: 1")
 
     args = parser.parse_args()
     return args
 
 
 def check_args_validity(args):
-    if args.score == 0 and args.npeaks == 0:
-        print("Error: Peak intensity and peak number cannot both be ignored")
-        sys.exit()
-    if args.sgwindow % 2 == 0:
-        print("Error: Savitzky Golay window size must be odd")
-        sys.exit()
-    if args.penalty < 0:
-        print("Error: Smoothing penalty must be positive or zero")
-        sys.exit()
-    if args.buckets <= 0:
-        print("Error: Number of buckets must be positive")
-        sys.exit()
-    if args.halfwidth <= 0:
-        print("Error: Suppression half width must be positive")
-        sys.exit()
-    if args.iterations <= 0:
-        print("Error: Number of iterations must be positive")
-        sys.exit()
+    assert args.score != 0 and args.npeaks != 0, "Peak intensity and peak number cannot both be ignored."
+    assert args.penalty >= 0, "Smoothing penalty must be positive or zero."
+    assert args.buckets > 0, "Number of buckets must be positive."
+    assert args.halfwidth > 0, "Suppression half width must be positive."
+    assert args.iterations > 0, "Number of iterations must be positive."
+    assert args.sgwindow % 2 != 0 and args.sgwindow > 0, "Savitzky Golay window size must be a positive odd number."
+    assert args.theshold >= 0, "Threshold must be positive or zero."
 
 
 def importFile(path, limit_low=None, limit_high=None):
@@ -77,8 +70,8 @@ def importFile(path, limit_low=None, limit_high=None):
 
     spectrum = np.genfromtxt(path, delimiter=",")
     spectrum = np.transpose(spectrum)
-    x = spectrum[0]
-    y = spectrum[1]
+    x = spectrum[0] # Wavenumbers
+    y = spectrum[1] # Intensities
 
     if limit_low is not None:
         try:
@@ -108,40 +101,36 @@ def importFile(path, limit_low=None, limit_high=None):
     return x, y
 
 
-def importDirectory(path, limit_low=None, limit_high=None):
+def importDirectory(path, format, limit_low=None, limit_high=None):
     """Import the spectral data from all files in a given directory. 
 
     Args:
         path (str): Path to the directory from which spectra should be imported.
+        format (str): File format of the files to be imported.
         limit_low (int, optional): Lower limit for the spectral range. Defaults to None.
         limit_high (int, optional): Upper limit for the spectral range. Defaults to None.
 
     Returns:
         x (numpy.ndarray): x-values (e.g wavelengths, wavenumbers) of the imported spectra. Each row represents one file.
         y (numpy.ndarray): y-values (e.g absorbance, transmission, intensity) of the imported spectra. Each row represents one file
-        files (lst): List of imported files, ordered numerically
+        files (lst): List of imported files
     """
 
-    if not path.endswith("/"):
-        path = path + "/"
-
     files = os.listdir(path)
-    files = [file for file in files if file.lower().endswith(".txt")]
-
-    # files = sorted(files, key=lambda s: int(s[s.find("(")+1:s.find(")")]))
+    files = [file for file in files if file.lower().endswith("." + format)]
 
     x = []
     y = []
 
     for file in files:
-        x0, y0 = importFile(path + file, limit_low, limit_high)
+        x0, y0 = importFile(os.path.join(path, file), limit_low, limit_high)
         x.append(x0)
         y.append(y0)
     return np.array(x), np.array(y), files
 
 
 def _prep_buckets(buckets, len_x):
-    """Calculate the position of the buckets for the subsampling step.
+    """Calculate the positions of the buckets for the subsampling step.
 
     Args:
         buckets (int or list/1D-array): Either the number of buckets, or a list of bucket positions.
@@ -157,6 +146,7 @@ def _prep_buckets(buckets, len_x):
         lims = buckets
         buckets = len(lims)-1
 
+    # Determine center of each bucket
     mids = np.rint(np.convolve(lims, np.ones(2), 'valid') / 2).astype(int)
     mids[0] = 0
     mids[-1] = len_x - 1
@@ -191,11 +181,12 @@ def smooth_whittaker(y, pen):
 
     Args:
         y (np.ndarray): The data to be smoothed, with each row representing one dataset (spectrum, etc).
-        dd (np.ndarray): Smoothing matrix for the whittaker algorithm.
+        pen (int): Penalty to the 2nd derivative for smoothing.
 
     Returns:
         y_smooth (np.ndarray): The smoothed data.
     """
+    # Create sparse matrix
     diag = np.zeros((5, 5))
     np.fill_diagonal(diag, 1)
     middle = np.matmul(np.diff(diag, n=2, axis=0).T,
@@ -212,6 +203,7 @@ def smooth_whittaker(y, pen):
     sparse_matrix = the_band[:, indices] * (10 ** pen)
     sparse_matrix[2, ] = sparse_matrix[2, ] + 1
 
+    # Smooth spectra
     y_smooth = solve_banded((2, 2), sparse_matrix, y.T).T
     return y_smooth
 
@@ -222,7 +214,6 @@ def subsample(y, lims):
     Args:
         y (np.ndarray): The data to be subsampled.
         lims (np.ndarray): The boundaries of the buckets.
-        buckets ([type]): The number of buckets.
 
     Returns:
         y_subs (np.ndarray): The minimum value for each bucket. 
@@ -297,15 +288,15 @@ def peakFill_4S(y, pen, hwi, its, buckets):
     return y_corrected
 
 
-def peakRecognition(x, y, sg_window):
-    """[summary]
+def peakRecognition(y, sg_window, threshold):
+    """Determines the number of peaks in each spectrum based on a 2nd derivative Savitzky-Golay-Filter.
 
     Args:
-        y ([type]): [description]
-        sg_window ([type]): [description]
+        y (numpy.ndarray): Baseline corrected spectra
+        sg_window (int): Window width of the Savitzky-Golay-Filter (must be odd)
 
     Returns:
-        [type]: [description]
+        peaks_all (list): List of lists with the peaks found in each spectrum
     """
 
     corrected_sg2 = savgol_filter(
@@ -314,11 +305,10 @@ def peakRecognition(x, y, sg_window):
     peaks_all = []
 
     for row in corrected_sg2:
-        threshold = 0.5
-        #0.05 + np.max(y[i])/30000
         peaks = argrelmin(row)[0]
-        peaks = [peak for peak in peaks if row[peak] < -threshold]
+        peaks = [peak for peak in peaks if row[peak] < -threshold] # Remove peaks below threshold
 
+        # Combine peaks w/o positive 2nd derivative between them
         peak_condensing = []
         peaks_condensed = []
         for j in range(len(row)):
@@ -337,17 +327,19 @@ def peakRecognition(x, y, sg_window):
 
 
 def calc_scores(x, y, peaks, score_measure, n_peaks_influence):
-    """[summary]
+    """Calculates the quality scores for each spectrum
 
     Args:
-        x ([type]): [description]
-        y ([type]): [description]
-        peaks ([type]): [description]
-        score_measure ([type]): [description]
-        n_peaks_influence ([type]): [description]
+        x (numpy.ndarray): x-values (e.g wavelengths, wavenumbers) of the imported spectrum.
+        y (numpy.ndarray): Baseline corrected spectra
+        peaks (list): List of lists with the peaks found in each spectrum
+        score_measure (int): Sets intensity measure used for score calculation
+        n_peaks_influence (int): Sets influence of peak number on the score. 
 
     Returns:
-        [type]: [description]
+        scores_peaks (list): Overall score for each spectrum.
+        scores (list): Pure intensity score for each spectrum (w/o number of peaks).
+        n_peaks_all (list): Number of peaks in each spectrum.
     """
 
     scores = []
@@ -392,14 +384,17 @@ def calc_scores(x, y, peaks, score_measure, n_peaks_influence):
 
 
 def export_sorted(path, files, scores, x, y_corr):
-    """[summary]
+    """Export sorted and baseline corrected spectra.
 
     Args:
-        path ([type]): [description]
-        files ([type]): [description]
-        scores ([type]): [description]
-        x ([type]): [description]
-        y_corr ([type]): [description]
+        path (str): Directory to export the spectra to.
+        files (list): List of files that were imported.
+        scores (list): Scored to sort the spectra by.
+        x (numpy.ndarray): x-values (e.g wavelengths, wavenumbers) of the imported spectrum.
+        y (numpy.ndarray): Baseline corrected spectra
+
+    Returns:
+        files_sorted (list): Sorted list of file names.
     """
 
     dest_raw = os.path.join(path, "sorted_spectra")
@@ -432,7 +427,7 @@ def export_sorted(path, files, scores, x, y_corr):
         dest_corr_file = os.path.join(dest_corr, new_file)
         with open(dest_corr_file, "w+") as f:
             for j in range(len(x[i_orig])):
-                f.write(str(x[i_orig, j]) + "," + str(y_corr[i_orig, j]))
+                f.write(str(x[i_orig, j]) + "," + str(y_corr[i_orig, j]) + "\n")
 
         bar5.update(bar5.value + 1)
 
@@ -452,7 +447,7 @@ if __name__ == '__main__':
         prefix='Importing Files.......',
         max_value=n_files)
 
-    x, y, files = importDirectory(args.DIR, args.limits[0], args.limits[1])
+    x, y, files = importDirectory(args.DIR, args.filetype, args.limits[0], args.limits[1])
 
     bar1.finish()
     bar2 = progressbar.ProgressBar(
@@ -467,7 +462,7 @@ if __name__ == '__main__':
         prefix='Detecting Peaks.......',
         max_value=n_files)
 
-    peaks = peakRecognition(x, y_corrected, args.sgwindow)
+    peaks = peakRecognition(y_corrected, args.sgwindow, args.threshold)
 
     bar3.finish()
     bar4 = progressbar.ProgressBar(
